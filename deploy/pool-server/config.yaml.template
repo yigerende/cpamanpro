@@ -1,0 +1,57 @@
+host: ""
+port: 8317
+
+tls:
+  enable: false
+  cert: ""
+  key: ""
+
+remote-management:
+  allow-remote: true
+  secret-key: "__CPA_MANAGEMENT_KEY__"
+  disable-control-panel: true
+  panel-github-repository: "https://github.com/seakee/CPA-Manager-Plus"
+
+auth-dir: "/app/data/auths"
+
+api-keys:
+  - "__CPA_API_KEY__"
+
+debug: false
+commercial-mode: false
+logging-to-file: false
+usage-statistics-enabled: true
+redis-usage-queue-retention-seconds: 3600
+proxy-url: ""
+source-ip: ""
+request-retry: 3
+max-retry-credentials: 0
+max-retry-interval: 30
+
+codex:
+  identity-confuse: true
+  cache-affinity:
+    enabled: true
+    shadow: false
+    max-entries: 65536
+    max-retry-credentials: 2
+    # Only cold requests and new affinity bindings are capped here.
+    # Existing warm sessions stay on their bound credential for cache reuse.
+    max-concurrency: 8
+    websocket-pool-slots: 8
+    max-session-requests: 2000
+    max-session-duration: "1h"
+    quota-preempt-used-ratio: 0.97
+    quota-hard-stop-used-ratio: 0.99
+  tail-burst:
+    enabled: false
+    quota-collector:
+      enabled: true
+      interval: "45s"
+      max-concurrency: 4
+      timeout: "8s"
+
+routing:
+  strategy: round-robin
+  session-affinity: false
+  high-cache-mode: true
