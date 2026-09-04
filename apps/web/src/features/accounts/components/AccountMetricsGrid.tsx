@@ -10,9 +10,17 @@ import styles from '../AccountsPage.module.scss';
 interface AccountMetricsGridProps {
   metrics: AccountMetrics;
   loading?: boolean;
+  runtimeMetrics?: {
+    concurrency: number;
+    rpm: number;
+  };
 }
 
-export function AccountMetricsGrid({ metrics, loading = false }: AccountMetricsGridProps) {
+export function AccountMetricsGrid({
+  metrics,
+  loading = false,
+  runtimeMetrics = { concurrency: 0, rpm: 0 },
+}: AccountMetricsGridProps) {
   const { t } = useTranslation();
   const cards = [
     {
@@ -63,6 +71,22 @@ export function AccountMetricsGrid({ metrics, loading = false }: AccountMetricsG
       icon: 'unconfirmed' as const,
       accent: 'violet' as const,
     },
+    {
+      key: 'concurrency-total',
+      label: t('accounts.metric_concurrency_total'),
+      value: runtimeMetrics.concurrency,
+      meta: t('accounts.metric_concurrency_total_meta'),
+      icon: 'available' as const,
+      accent: 'blue' as const,
+    },
+    {
+      key: 'rpm-total',
+      label: t('accounts.metric_rpm_total'),
+      value: runtimeMetrics.rpm,
+      meta: t('accounts.metric_rpm_total_meta'),
+      icon: 'attention' as const,
+      accent: 'violet' as const,
+    },
   ] satisfies Array<{
     key: string;
     label: string;
@@ -79,7 +103,13 @@ export function AccountMetricsGrid({ metrics, loading = false }: AccountMetricsG
           <SummaryCard
             key={card.key}
             label={card.label}
-            value={loading ? '...' : String(card.value)}
+            value={
+              loading
+                ? '...'
+                : Number.isInteger(card.value)
+                  ? String(card.value)
+                  : card.value.toFixed(1)
+            }
             meta={card.meta}
             icon={card.icon}
             accent={card.accent}

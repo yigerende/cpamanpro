@@ -171,7 +171,49 @@ export function AccountQuotaTab({
 
       <section className={styles.quotaSummaryPanel} data-account-quota-usage-summary="true">
         <div className={styles.quotaSummaryHeading}>
-          <h3>{t('accounts.detail_total_usage', { defaultValue: '凭证总体用量' })}</h3>
+          <h3>{t('accounts.detail_current_usage', { defaultValue: '当前凭据用量' })}</h3>
+          <div className={styles.quotaSummaryMeta}>
+            <span>{t('accounts.detail_usage_time_range', { defaultValue: '统计时间范围' })}</span>
+            <strong>{t('accounts.detail_usage_recent_7d', { defaultValue: '最近 7 天' })}</strong>
+          </div>
+        </div>
+        <div className={styles.quotaSummaryMetrics} data-account-quota-metrics="true">
+          <MetricCell
+            icon={<IconChartLine size={20} />}
+            tone="blue"
+            label={t('accounts.detail_total_requests')}
+            value={formatCompactNumber(detailView.value.requests)}
+            valueTitle={formatNumber(detailView.value.requests)}
+          />
+          <MetricCell
+            icon={<IconBinary size={20} />}
+            tone="teal"
+            label={t('accounts.detail_total_tokens')}
+            value={formatCompactNumber(detailView.value.totalTokens)}
+            valueTitle={formatNumber(detailView.value.totalTokens)}
+          />
+          <MetricCell
+            icon={<IconDollarSign size={20} />}
+            tone="amber"
+            label={t('accounts.detail_total_cost')}
+            value={detailView.value.estimatedCost !== null ? formatMoney(detailView.value.estimatedCost) : '-'}
+          />
+          <MetricCell
+            icon={<IconCheck size={20} />}
+            tone="green"
+            label={t('accounts.detail_success_rate')}
+            value={
+              detailView.value.successRate !== null
+                ? `${detailView.value.successRate.toFixed(2)}%`
+                : '-'
+            }
+          />
+        </div>
+      </section>
+
+      <section className={styles.quotaSummaryPanel} data-account-quota-lifetime-usage="true">
+        <div className={styles.quotaSummaryHeading}>
+          <h3>{t('accounts.detail_lifetime_usage', { defaultValue: '凭证历史累计总用量' })}</h3>
           <div className={styles.quotaSummaryMeta}>
             <span>{t('accounts.detail_usage_time_range', { defaultValue: '统计时间范围' })}</span>
             <strong>
@@ -181,7 +223,7 @@ export function AccountQuotaTab({
             </strong>
           </div>
         </div>
-        <div className={styles.quotaSummaryMetrics} data-account-quota-metrics="true">
+        <div className={styles.quotaSummaryMetrics} data-account-quota-lifetime-metrics="true">
           <MetricCell
             icon={<IconChartLine size={20} />}
             tone="blue"

@@ -31,6 +31,7 @@ import {
   IconCheck,
   IconArrowDownWideNarrow,
   IconArrowUpNarrowWide,
+  IconChartLine,
   IconCopy,
   IconDollarSign,
   IconDownload,
@@ -303,6 +304,51 @@ const MAX_CONCURRENT_QUOTA_REFRESH_PROVIDERS = 3;
 const PASSIVE_HEADER_SNAPSHOT_REFRESH_MS = 60_000;
 const PASSIVE_RUNTIME_CONCURRENCY_REFRESH_MS = 15_000;
 const PASSIVE_ACCOUNT_POOL_REFRESH_MS = 30_000;
+
+const normalizeAccountMetricKey = (value: unknown): string =>
+  typeof value === 'string' ? value.trim().toLowerCase() : '';
+
+/** Map one-minute monitoring account stats back to the credential rows. */
+const buildAccountRpmByRowKey = (
+  rows: AccountRow[],
+  stats: MonitoringAnalyticsAccountStatRow[]
+): Map<string, number> => {
+  const rowKeys = new Map<string, string>();
+  rows.forEach((row) => {
+    [
+      row.fileName,
+      row.authIndex,
+      row.accountLabel,
+      row.raw.account,
+      row.raw.email,
+      row.raw.label,
+      row.raw.note,
+    ]
+      .map(normalizeAccountMetricKey)
+      .filter(Boolean)
+      .forEach((key) => rowKeys.set(key, row.selectionKey));
+  });
+
+  const result = new Map<string, number>();
+  rows.forEach((row) => result.set(row.selectionKey, 0));
+  stats.forEach((stat) => {
+    const candidates = [
+      ...(stat.auth_indices ?? []),
+      ...(stat.sources ?? []),
+      stat.id,
+      stat.account_snapshot,
+      stat.auth_label_snapshot,
+      stat.auth_provider_snapshot,
+    ]
+      .map(normalizeAccountMetricKey)
+      .filter(Boolean);
+    const rowKey = candidates.map((key) => rowKeys.get(key)).find(Boolean);
+    if (!rowKey) return;
+    const calls = typeof stat.calls === 'number' && Number.isFinite(stat.calls) ? stat.calls : 0;
+    result.set(rowKey, Math.max(0, calls));
+  });
+  return result;
+};
 
 const isManagedCodexQuotaCooldown = (cooldown: QuotaCooldownInfo): boolean =>
   cooldown.owner === QUOTA_COOLDOWN_OWNER_CODEX_USAGE &&
@@ -871,9 +917,15 @@ export function AccountsPage() {
   const [highlightedAccountSortIndex, setHighlightedAccountSortIndex] = useState(-1);
   const [batchPriorityOpen, setBatchPriorityOpen] = useState(false);
   const [batchPriorityValue, setBatchPriorityValue] = useState('');
+  const [editingNoteRowKey, setEditingNoteRowKey] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteSavingRowKey, setNoteSavingRowKey] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(() => initialWorkspaceUrlState.current.pageSize);
   const [usageRows, setUsageRows] = useState<UsageValueRow[]>([]);
+  const [accountRpmByRowKey, setAccountRpmByRowKey] = useState<Map<string, number>>(
+    () => new Map()
+  );
   const [accountHistoryByRowKey, setAccountHistoryByRowKey] = useState<
     Map<string, MonitoringAccountHistoryItem>
   >(() => new Map());
@@ -967,6 +1019,8 @@ export function AccountsPage() {
   const accountHistoryRequestVersionsRef = useRef<Map<string, number>>(new Map());
   const accountHistoryPendingRequestsRef = useRef<Set<symbol>>(new Set());
   const accountHistoryAutoLoadKeyRef = useRef<string | null>(null);
+  const accountRpmRequestIdRef = useRef(0);
+  const accountRpmAbortRef = useRef<AbortController | null>(null);
   const accountWindowUsageReqIdRef = useRef(0);
   const accountWindowUsageAbortRef = useRef<AbortController | null>(null);
   const accountWindowUsageAutoLoadKeyRef = useRef<string | null>(null);
@@ -1327,18 +1381,6 @@ export function AccountsPage() {
     void loadFiles();
   }, [connectionFingerprint, loadFiles]);
 
-  // CPA exposes the in-flight request count on the auth-file list. Keep this
-  // lightweight, silent refresh separate from quota and supply refreshes so
-  // the account cards reflect live activity without touching request routing.
-  useInterval(
-    () => {
-      void loadFiles({ silent: true, runtimeStatusOnly: true });
-    },
-    activeView === 'accounts' && documentVisible && !loading
-      ? PASSIVE_RUNTIME_CONCURRENCY_REFRESH_MS
-      : null
-  );
-
   useEffect(() => {
     if (activeView === 'accounts') return;
     void refreshActiveWorkspace();
@@ -1680,6 +1722,68 @@ export function AccountsPage() {
       ),
     [accountQuotaOverrides, baseQuotaStores, files, inspectionResults, supplyMetadataByFile]
   );
+  const loadAccountRpm = useCallback(async () => {
+    if (
+      featureAvailability.checking ||
+      !featureAvailability.requestMonitoringAvailable ||
+      !featureAvailability.managerServiceBase ||
+      !managementKey ||
+      rows.length === 0
+    ) {
+      setAccountRpmByRowKey(new Map());
+      return;
+    }
+
+    accountRpmAbortRef.current?.abort();
+    const controller = new AbortController();
+    accountRpmAbortRef.current = controller;
+    const requestId = ++accountRpmRequestIdRef.current;
+    try {
+      const toMs = Date.now();
+      const response = await monitoringAnalyticsApi.getAnalytics(
+        featureAvailability.managerServiceBase,
+        managementKey,
+        {
+          from_ms: toMs - 60_000,
+          to_ms: toMs,
+          now_ms: toMs,
+          include: { account_stats: true },
+        },
+        controller.signal
+      );
+      if (controller.signal.aborted || accountRpmRequestIdRef.current !== requestId) return;
+      setAccountRpmByRowKey(buildAccountRpmByRowKey(rows, response.account_stats ?? []));
+    } catch {
+      if (controller.signal.aborted || accountRpmRequestIdRef.current !== requestId) return;
+      setAccountRpmByRowKey(new Map());
+    } finally {
+      if (accountRpmAbortRef.current === controller) accountRpmAbortRef.current = null;
+    }
+  }, [
+    featureAvailability.checking,
+    featureAvailability.managerServiceBase,
+    featureAvailability.requestMonitoringAvailable,
+    managementKey,
+    rows,
+  ]);
+  // Keep RPM in lockstep with the existing live concurrency refresh. A single
+  // one-minute analytics request covers all credentials and is throttled to
+  // the same 15-second cadence as the runtime status request.
+  useInterval(
+    () => {
+      void Promise.all([
+        loadFiles({ silent: true, runtimeStatusOnly: true }),
+        loadAccountRpm(),
+      ]);
+    },
+    activeView === 'accounts' && documentVisible && !loading
+      ? PASSIVE_RUNTIME_CONCURRENCY_REFRESH_MS
+      : null
+  );
+  useEffect(() => {
+    if (activeView !== 'accounts' || !documentVisible) return;
+    void loadAccountRpm();
+  }, [activeView, documentVisible, loadAccountRpm]);
   const accountSourceIpContext = useMemo(() => {
     const values = rows.map((row) => row.raw.sourceIp ?? row.raw.source_ip ?? '');
     return { values, usageCounts: collectSourceIpUsageCounts(values) };
@@ -1768,6 +1872,19 @@ export function AccountsPage() {
         accountPoolSummary
       ),
     [accountPoolSummary, actionCandidatesByRowKey, quotaCooldownsByRowKey, rows]
+  );
+  const runtimeMetrics = useMemo(
+    () => ({
+      concurrency: rows.reduce((total, row) => {
+        const value = row.currentConcurrency;
+        return total + (typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0);
+      }, 0),
+      rpm: Array.from(accountRpmByRowKey.values()).reduce(
+        (total, value) => total + (Number.isFinite(value) ? Math.max(0, value) : 0),
+        0
+      ),
+    }),
+    [accountRpmByRowKey, rows]
   );
   const providerOptions = useMemo(() => getProviderOptions(rows), [rows]);
   const planOptions = useMemo(() => getPlanOptions(rows), [rows]);
@@ -3553,7 +3670,13 @@ export function AccountsPage() {
               return next;
             });
             setQuotaResetRevision((current) => current + 1);
-            await Promise.allSettled([loadFiles(), loadQuotaCooldowns(), loadCodexResetCounts()]);
+            await Promise.allSettled([
+              loadFiles(),
+              loadQuotaCooldowns(),
+              loadCodexResetCounts(),
+              loadHeaderSnapshots(),
+              loadAccountPoolSummary(),
+            ]);
             showNotification(t('codex_quota.reset_success', { name: displayName }), 'success');
           } catch (err: unknown) {
             if (!isCurrent()) return;
@@ -3592,6 +3715,8 @@ export function AccountsPage() {
       getDisplayCodexQuota,
       loadFiles,
       loadCodexResetCounts,
+      loadHeaderSnapshots,
+      loadAccountPoolSummary,
       loadQuotaCooldowns,
       quotaSnapshotWindowsByRowKey,
       setCodexQuota,
@@ -3627,6 +3752,34 @@ export function AccountsPage() {
       await batchPatchFields(patchTargets, { priority });
     },
     [batchPatchFields]
+  );
+
+  const beginNoteEdit = useCallback((row: AccountRow) => {
+    setEditingNoteRowKey(row.selectionKey);
+    setNoteDraft(row.note ?? '');
+  }, []);
+
+  const cancelNoteEdit = useCallback(() => {
+    if (noteSavingRowKey === null) setEditingNoteRowKey(null);
+  }, [noteSavingRowKey]);
+
+  const saveNote = useCallback(
+    async (row: AccountRow) => {
+      if (row.runtimeOnly || noteSavingRowKey !== null) return;
+      const nextNote = noteDraft.trim();
+      setNoteSavingRowKey(row.selectionKey);
+      try {
+        const result = await batchPatchFields([getAuthFilePatchTarget(row.raw)], {
+          note: nextNote,
+        });
+        if (result && result.success > 0 && result.failed === 0) {
+          setEditingNoteRowKey(null);
+        }
+      } finally {
+        setNoteSavingRowKey(null);
+      }
+    },
+    [batchPatchFields, noteDraft, noteSavingRowKey]
   );
 
   const handleBatchPrioritySave = useCallback(async () => {
@@ -4658,6 +4811,7 @@ export function AccountsPage() {
           <div className={styles.accountCardHeader} data-account-list-header="true">
             <span>{t('accounts.list_header_credential')}</span>
             <span>{t('accounts.list_header_source')}</span>
+            <span>{t('accounts.list_header_note')}</span>
             <span>{t('accounts.list_header_availability')}</span>
             <span>{t('accounts.list_header_recent_requests')}</span>
             <span>{t('accounts.list_header_historical_usage')}</span>
@@ -4788,6 +4942,21 @@ export function AccountsPage() {
               ? formatHistorySuccessRate(accountHistory.success_rate)
               : row.usage.successRate !== null
                 ? formatPercent(row.usage.successRate, 1)
+                : '-';
+            const usedPercent = row.quota.usedPercent;
+            const estimated7dCostValue =
+              accountHistoryMatched &&
+              Number.isFinite(accountHistory.total_cost) &&
+              accountHistory.total_cost >= 0 &&
+              typeof usedPercent === 'number' &&
+              Number.isFinite(usedPercent) &&
+              usedPercent > 0
+                ? formatMoney((accountHistory.total_cost / usedPercent) * 100)
+                : '-';
+            const accountRpm = accountRpmByRowKey.get(row.selectionKey);
+            const accountRpmValue =
+              typeof accountRpm === 'number' && Number.isFinite(accountRpm)
+                ? accountRpm.toFixed(accountRpm >= 100 ? 0 : 1)
                 : '-';
             return (
               <article
@@ -4966,6 +5135,45 @@ export function AccountsPage() {
                   )}
                 </div>
 
+                <div className={styles.accountCardNote} data-account-note="true">
+                  <span className={styles.accountCardSourceLabel}>{t('accounts.list_header_note')}</span>
+                  {editingNoteRowKey === row.selectionKey ? (
+                    <div className={styles.accountNoteEditor} onClick={(event) => event.stopPropagation()}>
+                      <Input
+                        value={noteDraft}
+                        autoFocus
+                        placeholder={t('auth_files.note_placeholder')}
+                        aria-label={t('accounts.list_header_note')}
+                        onChange={(event) => setNoteDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            void saveNote(row);
+                          } else if (event.key === 'Escape') {
+                            event.preventDefault();
+                            cancelNoteEdit();
+                          }
+                        }}
+                        onBlur={() => void saveNote(row)}
+                        disabled={noteSavingRowKey === row.selectionKey}
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className={styles.accountNoteDisplay}
+                      title={row.note || t('accounts.note_empty')}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        beginNoteEdit(row);
+                      }}
+                      disabled={row.runtimeOnly}
+                    >
+                      {row.note?.trim() || t('accounts.note_empty')}
+                    </button>
+                  )}
+                </div>
+
                 <div className={styles.accountCardHealth}>
                   <div className={styles.accountCardLine}>
                     <span
@@ -5003,6 +5211,15 @@ export function AccountsPage() {
                     >
                       {t('accounts.col_priority')} {item.identity.priority}
                     </span>
+                  </div>
+                  <div className={styles.accountHealthMetaRow}>
+                    <div
+                      className={`${styles.accountConcurrencyBadge} ${styles.accountConcurrencyBadgeDefault}`}
+                      title={t('accounts.account_rpm_hint')}
+                    >
+                      <span>{t('accounts.account_rpm')}</span>
+                      <strong>{accountRpmValue}</strong>
+                    </div>
                   </div>
                 </div>
 
@@ -5059,6 +5276,16 @@ export function AccountsPage() {
                         <IconCheck size={13} />
                       </span>
                       <strong>{accountHistorySuccessValue}</strong>
+                    </div>
+                    <div
+                      className={`${styles.accountHistoryMetric} ${styles.accountHistoryMetricCost}`}
+                      aria-label={`${t('accounts.history_estimated_7d_cost')} ${estimated7dCostValue}`}
+                      title={t('accounts.history_estimated_7d_cost_hint')}
+                    >
+                      <span className={styles.accountHistoryIcon}>
+                        <IconChartLine size={13} />
+                      </span>
+                      <strong>{estimated7dCostValue}</strong>
                     </div>
                   </div>
                   {accountHistoryFootnote ? (
@@ -5625,6 +5852,7 @@ export function AccountsPage() {
     <>
       <AccountMetricsGrid
         metrics={metrics}
+        runtimeMetrics={runtimeMetrics}
         loading={accountPoolSummaryAvailable && accountPoolSummaryLoading}
       />
       {error ? <div className={styles.errorBox}>{error}</div> : null}

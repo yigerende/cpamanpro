@@ -20,15 +20,18 @@ type ResetRequest struct {
 }
 
 type ResetResult struct {
-	UsageBefore          json.RawMessage `json:"usage_before,omitempty"`
-	UsageAfter           json.RawMessage `json:"usage_after,omitempty"`
-	ResetCreditsBefore   json.RawMessage `json:"reset_credits_before,omitempty"`
-	ResetCreditsAfter    json.RawMessage `json:"reset_credits_after,omitempty"`
-	ConsumeResponse      json.RawMessage `json:"consume_response,omitempty"`
-	LocalResetResponse   json.RawMessage `json:"local_reset_response,omitempty"`
-	Verified             bool            `json:"verified"`
-	VerificationAttempts int             `json:"verification_attempts"`
-	HistoryDeleted       int64           `json:"history_deleted,omitempty"`
+	UsageBefore           json.RawMessage `json:"usage_before,omitempty"`
+	UsageAfter            json.RawMessage `json:"usage_after,omitempty"`
+	ResetCreditsBefore    json.RawMessage `json:"reset_credits_before,omitempty"`
+	ResetCreditsAfter     json.RawMessage `json:"reset_credits_after,omitempty"`
+	ConsumeResponse       json.RawMessage `json:"consume_response,omitempty"`
+	LocalResetResponse    json.RawMessage `json:"local_reset_response,omitempty"`
+	Verified              bool            `json:"verified"`
+	VerificationAttempts  int             `json:"verification_attempts"`
+	HistoryDeleted        int64           `json:"history_deleted,omitempty"`
+	AccountStateRecovered bool            `json:"account_state_recovered"`
+	QuotaCacheRefreshed   bool            `json:"quota_cache_refreshed"`
+	AccountPoolRefreshed  bool            `json:"account_pool_refreshed"`
 }
 
 type OperationResponse struct {

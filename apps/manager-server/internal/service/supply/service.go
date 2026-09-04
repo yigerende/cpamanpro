@@ -7884,6 +7884,12 @@ func (s *Service) invalidateAuthAndCapacityCaches() {
 	s.invalidateStatusCache()
 }
 
+// InvalidateAuthAndCapacityCaches invalidates account, quota inspection,
+// status and account-pool snapshots after an external auth/quota mutation.
+func (s *Service) InvalidateAuthAndCapacityCaches() {
+	s.invalidateAuthAndCapacityCaches()
+}
+
 type smartSupplyPressure struct {
 	level                       string
 	reason                      string

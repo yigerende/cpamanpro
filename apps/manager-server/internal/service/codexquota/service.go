@@ -65,6 +65,28 @@ type Service struct {
 	authFileMutations *cpaauthfiles.MutationCoordinator
 	locks             *accountLocks
 	history           credentialHistoryRepository
+	cacheInvalidator  func()
+}
+
+// SetCacheInvalidator wires the account/quota pool cache invalidation hook.
+// It is optional so the quota service remains usable in tests and when the
+// supply module is disabled.
+func (s *Service) SetCacheInvalidator(invalidator func()) {
+	if s == nil {
+		return
+	}
+	s.cacheInvalidator = invalidator
+}
+
+func (s *Service) invalidatePostResetCaches(result *ResetResult) {
+	if s == nil || s.cacheInvalidator == nil {
+		return
+	}
+	s.cacheInvalidator()
+	if result != nil {
+		result.QuotaCacheRefreshed = true
+		result.AccountPoolRefreshed = true
+	}
 }
 
 func New(st *store.Store, setupService *managerconfig.Service, clients ...*http.Client) *Service {
@@ -208,6 +230,9 @@ func (s *Service) AutoResetCredit(ctx context.Context, request ResetRequest) (Op
 		if err := s.recoverRuntimeQuotaPreempt(ctx, setup, file); err != nil {
 			return OperationResponse{}, AutoResetResult{Eligible: true, Reason: "recovery_failed"}, err
 		}
+		// A quota can recover without consuming a credit. Clear stale quota and
+		// account-pool snapshots in that case as well.
+		s.invalidatePostResetCaches(nil)
 		return OperationResponse{
 			OperationID: operationID,
 			AuthIndex:   authIndex,

@@ -158,6 +158,12 @@ func fromExisting(
 		TTL:            cfg.UsageImportSessionTTL,
 	}))
 	authFileMutationCoordinator := cpaauthfiles.NewMutationCoordinator()
+	codexQuotaService := codexquotasvc.NewWithMutationCoordinator(
+		st,
+		managerConfigService,
+		authFileMutationCoordinator,
+	)
+	codexQuotaService.SetCacheInvalidator(supplyService.InvalidateAuthAndCapacityCaches)
 	return &Context{
 		Config:               cfg,
 		Store:                st,
@@ -176,11 +182,7 @@ func fromExisting(
 			managerConfigService,
 			codexinspectionsvc.ServiceOptions{AuthFileMutationCoordinator: authFileMutationCoordinator},
 		),
-		CodexQuotaService: codexquotasvc.NewWithMutationCoordinator(
-			st,
-			managerConfigService,
-			authFileMutationCoordinator,
-		),
+		CodexQuotaService: codexQuotaService,
 		ContainerOpsService: containeropssvc.New(containeropssvc.Options{
 			AgentURL:   cfg.ContainerOpsAgentURL,
 			AgentToken: cfg.ContainerOpsAgentToken,
