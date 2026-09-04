@@ -1771,10 +1771,7 @@ export function AccountsPage() {
   // the same 15-second cadence as the runtime status request.
   useInterval(
     () => {
-      void Promise.all([
-        loadFiles({ silent: true, runtimeStatusOnly: true }),
-        loadAccountRpm(),
-      ]);
+      void Promise.all([loadFiles({ silent: true, runtimeStatusOnly: true }), loadAccountRpm()]);
     },
     activeView === 'accounts' && documentVisible && !loading
       ? PASSIVE_RUNTIME_CONCURRENCY_REFRESH_MS
@@ -1877,7 +1874,9 @@ export function AccountsPage() {
     () => ({
       concurrency: rows.reduce((total, row) => {
         const value = row.currentConcurrency;
-        return total + (typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0);
+        return (
+          total + (typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0)
+        );
       }, 0),
       rpm: Array.from(accountRpmByRowKey.values()).reduce(
         (total, value) => total + (Number.isFinite(value) ? Math.max(0, value) : 0),
@@ -3769,9 +3768,13 @@ export function AccountsPage() {
       const nextNote = noteDraft.trim();
       setNoteSavingRowKey(row.selectionKey);
       try {
-        const result = await batchPatchFields([getAuthFilePatchTarget(row.raw)], {
-          note: nextNote,
-        });
+        const result = await batchPatchFields(
+          [getAuthFilePatchTarget(row.raw)],
+          {
+            note: nextNote,
+          },
+          { refresh: false }
+        );
         if (result && result.success > 0 && result.failed === 0) {
           setEditingNoteRowKey(null);
         }
@@ -4812,6 +4815,7 @@ export function AccountsPage() {
             <span>{t('accounts.list_header_credential')}</span>
             <span>{t('accounts.list_header_source')}</span>
             <span>{t('accounts.list_header_note')}</span>
+            <span>{t('account_groups.groups_column')}</span>
             <span>{t('accounts.list_header_availability')}</span>
             <span>{t('accounts.list_header_recent_requests')}</span>
             <span>{t('accounts.list_header_historical_usage')}</span>
@@ -4977,25 +4981,6 @@ export function AccountsPage() {
                     {item.identity.planType ? (
                       <span className={styles.accountMetaPill}>{item.identity.planType}</span>
                     ) : null}
-                    {accountGroupsAvailable ? (
-                      <button
-                        type="button"
-                        className={styles.accountGroupBadgeButton}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openAccountGroupEditor([row.raw], getAuthFileGroupIds(row.raw));
-                        }}
-                        disabled={row.runtimeOnly}
-                        title={t('account_groups.edit_membership')}
-                      >
-                        <AccountGroupBadges
-                          ids={getAuthFileGroupIds(row.raw)}
-                          groups={accountGroups}
-                          maxVisible={2}
-                          showEmpty
-                        />
-                      </button>
-                    ) : null}
                     {row.workspaceName || row.workspaceId ? (
                       <span
                         className={`${styles.accountMetaPill} ${styles.accountWorkspacePill}`}
@@ -5132,9 +5117,14 @@ export function AccountsPage() {
                 </div>
 
                 <div className={styles.accountCardNote} data-account-note="true">
-                  <span className={styles.accountCardSourceLabel}>{t('accounts.list_header_note')}</span>
+                  <span className={styles.accountCardSourceLabel}>
+                    {t('accounts.list_header_note')}
+                  </span>
                   {editingNoteRowKey === row.selectionKey ? (
-                    <div className={styles.accountNoteEditor} onClick={(event) => event.stopPropagation()}>
+                    <div
+                      className={styles.accountNoteEditor}
+                      onClick={(event) => event.stopPropagation()}
+                    >
                       <Input
                         value={noteDraft}
                         autoFocus
@@ -5167,6 +5157,33 @@ export function AccountsPage() {
                     >
                       {row.note?.trim() || t('accounts.note_empty')}
                     </button>
+                  )}
+                </div>
+
+                <div className={styles.accountCardGroup} data-account-group="true">
+                  <span className={styles.accountCardSourceLabel}>
+                    {t('account_groups.groups_column')}
+                  </span>
+                  {accountGroupsAvailable ? (
+                    <button
+                      type="button"
+                      className={styles.accountGroupBadgeButton}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openAccountGroupEditor([row.raw], getAuthFileGroupIds(row.raw));
+                      }}
+                      disabled={row.runtimeOnly}
+                      title={t('account_groups.edit_membership')}
+                    >
+                      <AccountGroupBadges
+                        ids={getAuthFileGroupIds(row.raw)}
+                        groups={accountGroups}
+                        maxVisible={3}
+                        showEmpty
+                      />
+                    </button>
+                  ) : (
+                    <span className={styles.accountSourceEmpty}>-</span>
                   )}
                 </div>
 
@@ -5846,6 +5863,54 @@ export function AccountsPage() {
 
   const renderAccountsOverview = () => (
     <>
+      {accountGroupsAvailable && accountGroups.length > 0 ? (
+        <nav
+          className={styles.accountGroupQuickFilters}
+          aria-label={t('account_groups.filter_label')}
+        >
+          <button
+            type="button"
+            className={
+              accountGroupIncludeFilter === 'all' ? styles.accountGroupQuickFilterActive : ''
+            }
+            onClick={() => {
+              setAccountGroupIncludeFilter('all');
+              setAccountGroupExcludeFilter('none');
+            }}
+          >
+            {t('account_groups.filter_all')}
+          </button>
+          {accountGroups.map((group) => (
+            <button
+              key={group.id}
+              type="button"
+              className={
+                accountGroupIncludeFilter === String(group.id)
+                  ? styles.accountGroupQuickFilterActive
+                  : ''
+              }
+              onClick={() => {
+                setAccountGroupIncludeFilter(String(group.id));
+                setAccountGroupExcludeFilter('none');
+              }}
+            >
+              {group.name}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={
+              accountGroupIncludeFilter === 'ungrouped' ? styles.accountGroupQuickFilterActive : ''
+            }
+            onClick={() => {
+              setAccountGroupIncludeFilter('ungrouped');
+              setAccountGroupExcludeFilter('none');
+            }}
+          >
+            {t('account_groups.ungrouped')}
+          </button>
+        </nav>
+      ) : null}
       <AccountMetricsGrid
         metrics={metrics}
         runtimeMetrics={runtimeMetrics}

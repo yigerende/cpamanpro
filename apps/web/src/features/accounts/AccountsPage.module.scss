@@ -97,6 +97,42 @@
   min-width: 0;
 }
 
+.accountGroupQuickFilters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0 0 10px;
+  overflow-x: auto;
+  padding: 2px 1px 4px;
+  scrollbar-width: thin;
+
+  button {
+    flex: 0 0 auto;
+    min-height: 32px;
+    padding: 5px 12px;
+    border: 1px solid var(--accounts-border);
+    border-radius: 999px;
+    background: var(--accounts-surface);
+    color: var(--accounts-muted);
+    font-size: 12px;
+    font-weight: 750;
+    cursor: pointer;
+    transition: 0.14s ease;
+
+    &:hover {
+      border-color: color-mix(in srgb, var(--accounts-brand) 42%, var(--accounts-border));
+      color: var(--accounts-text);
+    }
+  }
+}
+
+.accountGroupQuickFilterActive {
+  border-color: color-mix(in srgb, var(--accounts-brand) 58%, var(--accounts-border)) !important;
+  background: color-mix(in srgb, var(--accounts-brand) 12%, var(--accounts-surface)) !important;
+  color: var(--accounts-brand-active) !important;
+}
+
 .metricsGrid {
   display: grid;
   grid-template-columns: repeat(8, minmax(0, 1fr));
@@ -316,6 +352,7 @@
     minmax(128px, 166px)
     minmax(120px, 144px)
     minmax(120px, 150px)
+    minmax(112px, 132px)
     88px
     132px
     176px
@@ -341,9 +378,9 @@
     line-height: 1.25;
   }
 
-  > span:nth-child(4),
   > span:nth-child(5),
   > span:nth-child(6),
+  > span:nth-child(7),
   > span:last-child {
     justify-content: center;
     text-align: center;
@@ -352,7 +389,8 @@
   > span:first-child,
   > span:nth-child(2),
   > span:nth-child(3),
-  > span:nth-child(7) {
+  > span:nth-child(4),
+  > span:nth-child(8) {
     justify-content: flex-start;
     text-align: left;
   }
@@ -386,6 +424,7 @@
       minmax(160px, 1.05fr)
       minmax(132px, 0.78fr)
       minmax(132px, 0.82fr)
+      minmax(118px, 0.72fr)
       92px
       138px
       176px
@@ -413,6 +452,7 @@
 
   .accountCardSource::before,
   .accountCardNote::before,
+  .accountCardGroup::before,
   .accountCardHealth::before,
   .accountCardLatestRequest::before,
   .accountCardEvidence::before,
@@ -445,6 +485,7 @@
 .accountCardIdentity,
 .accountCardSource,
 .accountCardNote,
+.accountCardGroup,
 .accountCardHealth,
 .accountCardLatestRequest,
 .accountCardEvidence,
@@ -458,6 +499,7 @@
 .accountCardIdentity,
 .accountCardSource,
 .accountCardNote,
+.accountCardGroup,
 .accountCardHealth,
 .accountCardLatestRequest,
 .accountCardEvidence,
@@ -467,6 +509,7 @@
 
 .accountCardSource,
 .accountCardNote,
+.accountCardGroup,
 .accountCardHealth,
 .accountCardLatestRequest,
 .accountCardEvidence,
@@ -478,6 +521,7 @@
 
 .accountCardSource::before,
 .accountCardNote::before,
+.accountCardGroup::before,
 .accountCardHealth::before,
 .accountCardLatestRequest::before,
 .accountCardEvidence::before,
@@ -517,6 +561,13 @@
 }
 
 .accountCardNote {
+  display: flex;
+  justify-content: center;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.accountCardGroup {
   display: flex;
   justify-content: center;
   flex-direction: column;
@@ -5647,6 +5698,7 @@
   .accountCardIdentity,
   .accountCardSource,
   .accountCardNote,
+  .accountCardGroup,
   .accountCardHealth,
   .accountCardLatestRequest,
   .accountCardEvidence,
@@ -5658,6 +5710,7 @@
 
   .accountCardSource,
   .accountCardNote,
+  .accountCardGroup,
   .accountCardHealth,
   .accountCardLatestRequest,
   .accountCardEvidence,
@@ -5752,6 +5805,13 @@
     border-top: 1px solid color-mix(in srgb, var(--accounts-border) 64%, transparent);
   }
 
+  .accountCardGroup {
+    grid-column: 1 / -1;
+    gap: 5px;
+    padding: 8px 2px 0 0;
+    border-top: 1px solid color-mix(in srgb, var(--accounts-border) 64%, transparent);
+  }
+
   .accountIdentityBadgeRow {
     flex-wrap: wrap;
     gap: 4px 6px;
@@ -5778,6 +5838,7 @@
   }
 
   .accountCardSource,
+  .accountCardGroup,
   .accountCardHealth,
   .accountCardLatestRequest,
   .accountCardEvidence,

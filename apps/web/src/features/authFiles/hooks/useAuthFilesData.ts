@@ -12,6 +12,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import {
   authFilesApi,
+  applyAuthFileFieldsPatchToRecord,
   type AuthFileFieldsPatch,
   type AuthFileImportDefaults,
 } from '@/services/api';
@@ -132,7 +133,8 @@ export type UseAuthFilesDataResult = {
   batchRetryAgentIdentityRegistration: (names: string[]) => Promise<void>;
   batchPatchFields: (
     targets: AuthFilePatchTarget[],
-    fields: AuthFileFieldsPatch
+    fields: AuthFileFieldsPatch,
+    options?: { refresh?: boolean }
   ) => Promise<AuthFilesBatchPatchResult | null>;
   batchDelete: (targets: AuthFileItem[], options?: AuthFilesBatchDeleteOptions) => void;
 };
@@ -2239,7 +2241,8 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions = {}): UseAuth
   const batchPatchFields = useCallback(
     async (
       targets: AuthFilePatchTarget[],
-      fields: AuthFileFieldsPatch
+      fields: AuthFileFieldsPatch,
+      options: { refresh?: boolean } = {}
     ): Promise<AuthFilesBatchPatchResult | null> => {
       const generation = authFilesOperationGenerationRef.current;
       const filesRevision = filesRevisionRef.current;
@@ -2253,17 +2256,24 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions = {}): UseAuth
       setBatchFieldsUpdating(true);
 
       try {
-        const response = await authFilesApi.list();
-        if (authFilesOperationGenerationRef.current !== generation) return null;
-        const currentFiles = Array.isArray(response.files) ? response.files : [];
-        if (filesRevisionRef.current === filesRevision) commitFiles(currentFiles);
+        let resolvedFiles: AuthFileItem[];
+        if (options.refresh === false) {
+          resolvedFiles = files;
+        } else {
+          const response = await authFilesApi.list();
+          if (authFilesOperationGenerationRef.current !== generation) return null;
+          resolvedFiles = Array.isArray(response.files) ? response.files : [];
+        }
+        if (options.refresh !== false && filesRevisionRef.current === filesRevision) {
+          commitFiles(resolvedFiles);
+        }
 
         let success = 0;
         let failed = 0;
         const failedNames = new Set<string>();
         const resolvedTargets: AuthFilePatchTarget[] = [];
         normalizedTargets.forEach((target) => {
-          const resolution = resolveAuthFileStatusMutationTarget(currentFiles, target);
+          const resolution = resolveAuthFileStatusMutationTarget(resolvedFiles, target);
           if (
             !resolution.target ||
             resolution.failure !== null ||
@@ -2280,7 +2290,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions = {}): UseAuth
           AuthFilePatchTargetGroup & { sourceIdentities: AuthFilePatchTarget[] }
         > = [];
         groupBatchPatchTargets(resolvedTargets).forEach((group) => {
-          const sourceMembers = getAuthFileSourceMembers(currentFiles, group.name);
+          const sourceMembers = getAuthFileSourceMembers(resolvedFiles, group.name);
           const hasStableAuthIndexes = group.targets.every(
             (target) => normalizePatchTargetAuthIndex(target.authIndex) !== null
           );
@@ -2319,17 +2329,19 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions = {}): UseAuth
         );
         if (authFilesOperationGenerationRef.current !== generation) return null;
 
+        const successfulTargets: AuthFilePatchTarget[] = [];
         results.forEach((result, index) => {
           const group = executableGroups[index];
           if (result.status === 'fulfilled') {
             success += group.targets.length;
+            successfulTargets.push(...group.targets);
             return;
           }
           failed += group.targets.length;
           failedNames.add(group.name);
         });
 
-        if (success > 0) {
+        if (success > 0 && options.refresh !== false) {
           try {
             await loadFiles({ throwOnError: true });
             if (authFilesOperationGenerationRef.current !== generation) return null;
@@ -2339,6 +2351,34 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions = {}): UseAuth
               err instanceof Error ? err.message : t('notification.refresh_failed');
             showNotification(`${t('notification.refresh_failed')}: ${errorMessage}`, 'warning');
           }
+        }
+
+        if (success > 0 && options.refresh === false) {
+          const matchesTarget = (file: AuthFileItem, target: AuthFilePatchTarget) => {
+            const fileTarget = getAuthFilePatchTarget(file);
+            if (fileTarget.name !== target.name) return false;
+            const fieldsToCompare: Array<keyof AuthFilePatchTarget> = [
+              'runtimeId',
+              'authIndex',
+              'provider',
+              'accountId',
+              'accountSnapshot',
+            ];
+            return fieldsToCompare.every((key) => {
+              if (target[key] === undefined || target[key] === null || target[key] === '') {
+                return true;
+              }
+              return String(fileTarget[key] ?? '') === String(target[key]);
+            });
+          };
+          commitFiles((previous) =>
+            previous.map((file) => {
+              const target = successfulTargets.find((candidate) => matchesTarget(file, candidate));
+              return target
+                ? (applyAuthFileFieldsPatchToRecord(file, fields) as AuthFileItem)
+                : file;
+            })
+          );
         }
 
         if (failed === 0) {
@@ -2358,7 +2398,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions = {}): UseAuth
         }
       }
     },
-    [commitFiles, deselectAll, loadFiles, showNotification, t]
+    [commitFiles, deselectAll, files, loadFiles, showNotification, t]
   );
 
   const retryAgentIdentityRegistration = useCallback(
