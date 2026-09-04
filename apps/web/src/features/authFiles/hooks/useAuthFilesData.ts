@@ -136,6 +136,7 @@ export type UseAuthFilesDataResult = {
     fields: AuthFileFieldsPatch,
     options?: { refresh?: boolean }
   ) => Promise<AuthFilesBatchPatchResult | null>;
+  patchFilesLocally: (targets: AuthFilePatchTarget[], fields: AuthFileFieldsPatch) => void;
   batchDelete: (targets: AuthFileItem[], options?: AuthFilesBatchDeleteOptions) => void;
 };
 
@@ -2238,6 +2239,35 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions = {}): UseAuth
     ]
   );
 
+  const patchFilesLocally = useCallback(
+    (targets: AuthFilePatchTarget[], fields: AuthFileFieldsPatch) => {
+      const normalizedTargets = normalizeBatchPatchTargets(targets);
+      const matchesTarget = (file: AuthFileItem, target: AuthFilePatchTarget) => {
+        const fileTarget = getAuthFilePatchTarget(file);
+        if (fileTarget.name !== target.name) return false;
+        const fieldsToCompare: Array<keyof AuthFilePatchTarget> = [
+          'runtimeId',
+          'authIndex',
+          'provider',
+          'accountId',
+          'accountSnapshot',
+        ];
+        return fieldsToCompare.every((key) => {
+          if (target[key] === undefined || target[key] === null || target[key] === '') return true;
+          return String(fileTarget[key] ?? '') === String(target[key]);
+        });
+      };
+      commitFiles((previous) =>
+        previous.map((file) =>
+          normalizedTargets.some((target) => matchesTarget(file, target))
+            ? (applyAuthFileFieldsPatchToRecord(file, fields) as AuthFileItem)
+            : file
+        )
+      );
+    },
+    [commitFiles]
+  );
+
   const batchPatchFields = useCallback(
     async (
       targets: AuthFilePatchTarget[],
@@ -2353,33 +2383,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions = {}): UseAuth
           }
         }
 
-        if (success > 0 && options.refresh === false) {
-          const matchesTarget = (file: AuthFileItem, target: AuthFilePatchTarget) => {
-            const fileTarget = getAuthFilePatchTarget(file);
-            if (fileTarget.name !== target.name) return false;
-            const fieldsToCompare: Array<keyof AuthFilePatchTarget> = [
-              'runtimeId',
-              'authIndex',
-              'provider',
-              'accountId',
-              'accountSnapshot',
-            ];
-            return fieldsToCompare.every((key) => {
-              if (target[key] === undefined || target[key] === null || target[key] === '') {
-                return true;
-              }
-              return String(fileTarget[key] ?? '') === String(target[key]);
-            });
-          };
-          commitFiles((previous) =>
-            previous.map((file) => {
-              const target = successfulTargets.find((candidate) => matchesTarget(file, candidate));
-              return target
-                ? (applyAuthFileFieldsPatchToRecord(file, fields) as AuthFileItem)
-                : file;
-            })
-          );
-        }
+        if (success > 0 && options.refresh === false) patchFilesLocally(successfulTargets, fields);
 
         if (failed === 0) {
           showNotification(t('auth_files.batch_fields_success', { count: success }), 'success');
@@ -2398,7 +2402,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions = {}): UseAuth
         }
       }
     },
-    [commitFiles, deselectAll, files, loadFiles, showNotification, t]
+    [commitFiles, deselectAll, files, loadFiles, patchFilesLocally, showNotification, t]
   );
 
   const retryAgentIdentityRegistration = useCallback(
@@ -2653,6 +2657,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions = {}): UseAuth
     rebuildAgentIdentityRegistration,
     batchRetryAgentIdentityRegistration,
     batchPatchFields,
+    patchFilesLocally,
     batchDelete,
   };
 }

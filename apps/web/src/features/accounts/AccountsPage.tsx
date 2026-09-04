@@ -789,6 +789,7 @@ export function AccountsPage() {
     batchDownload,
     batchSetStatus,
     batchPatchFields,
+    patchFilesLocally,
     batchDelete,
   } = useAuthFilesData({ importDefaults, connectionFingerprint });
 
@@ -4072,6 +4073,10 @@ export function AccountsPage() {
           group_ids: accountGroupEditorIds,
         }))
       );
+      patchFilesLocally(
+        accountGroupEditorTargets.map((file) => getAuthFilePatchTarget(file)),
+        { group_ids: accountGroupEditorIds }
+      );
       setAccountGroupEditorOpen(false);
       deselectAll();
       setIsSelectionMode(false);
@@ -4079,7 +4084,7 @@ export function AccountsPage() {
         t('account_groups.membership_success', { count: accountGroupEditorTargets.length }),
         'success'
       );
-      await Promise.all([loadFiles(), loadAccountGroups()]);
+      await loadAccountGroups();
     } catch (error) {
       showNotification(error instanceof Error ? error.message : String(error), 'error');
     } finally {
