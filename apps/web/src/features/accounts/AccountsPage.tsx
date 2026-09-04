@@ -4943,15 +4943,11 @@ export function AccountsPage() {
               : row.usage.successRate !== null
                 ? formatPercent(row.usage.successRate, 1)
                 : '-';
-            const usedPercent = row.quota.usedPercent;
             const estimated7dCostValue =
               accountHistoryMatched &&
               Number.isFinite(accountHistory.total_cost) &&
-              accountHistory.total_cost >= 0 &&
-              typeof usedPercent === 'number' &&
-              Number.isFinite(usedPercent) &&
-              usedPercent > 0
-                ? formatMoney((accountHistory.total_cost / usedPercent) * 100)
+              accountHistory.total_cost >= 0
+                ? formatMoney(accountHistory.total_cost)
                 : '-';
             const accountRpm = accountRpmByRowKey.get(row.selectionKey);
             const accountRpmValue =
